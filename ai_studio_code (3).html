@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Local TV Clone</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            background-color: #111;
+            overflow: hidden;
+            font-family: 'Courier New', Courier, monospace;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        /* Контейнер видео */
+        #tv-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+            pointer-events: none;
+            background: #000;
+        }
+
+        /* HTML5 Видео плеер */
+        video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover; /* Чтобы видео заполняло весь экран без черных полос */
+            display: none; /* Скрыто, пока не начнет играть */
+        }
+
+        /* Шум (Canvas) */
+        canvas#static-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 20;
+            display: block; 
+        }
+
+        /* Экран ошибки */
+        #error-screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 15;
+            background: #000;
+            color: #ff3333;
+            display: none;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            padding: 20px;
+        }
+
+        #error-screen h2 { font-size: 24px; margin-bottom: 10px; text-transform: uppercase; }
+        #error-screen p { font-size: 14px; opacity: 0.8; }
+
+        /* Интро */
+        #intro {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            z-index: 30;
+            font-weight: bold;
+            letter-spacing: 4px;
+            text-align: center;
+            pointer-events: none;
+            text-shadow: 0 2px 10px rgba(0,0,0,0.8);
+            mix-blend-mode: exclusion;
+        }
+
+        #click-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 100;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="intro">
+        <div id="main-text">INITIALIZING...</div>
+        <div id="sub-text" style="font-size: 12px; margin-top: 10px; opacity: 0.7;">SCANNING REPO FOLDER</div>
+    </div>
+
+    <canvas id="static-canvas"></canvas>
+
+    <div id="error-screen">
+        <h2>BAD SIGNAL</h2>
+        <p>FILE CORRUPTED OR MISSING</p>
+        <p id="error-detail" style="font-size: 10px; margin-top: 20px; opacity: 0.5;"></p>
+    </div>
+
+    <div id="tv-container">
+        <!-- HTML5 Video Element вместо Iframe -->
+        <video id="tv-video" playsinline webkit-playsinline preload="auto"></video>
+    </div>
+
+    <div id="click-layer"></div>
+
+    <script>
+        // --- 1. НАСТРОЙКИ GITHUB ---
+        const GITHUB_USER = 'kapustinmisha7-stack'; 
+        
+        // ! ВАЖНО: ВПИШИ СЮДА НАЗВАНИЕ СВОЕГО РЕПОЗИТОРИЯ (как в url)
+        // Например, если ссылка github.com/user/my-tv-site, то пиши 'my-tv-site'
+        const REPO_NAME = 'ИМЯ_ТВОЕГО_РЕПОЗИТОРИЯ'; 
+        
+        const FOLDER_PATH = 'videos'; // Папка с видео
+        
+        let videos = []; // Сюда загрузятся ссылки
+        let currentIdx = -1;
+        let isNoiseActive = true;
+        let audioCtx = null;
+        let noiseAnimationId;
+        let skipTimeout;
+        let appReady = false;
+
+        const videoElement = document.getElementById('tv-video');
+
+        // --- 2. ЗАГРУЗКА СПИСКА ФАЙЛОВ ИЗ GITHUB API ---
+        async function fetchVideoList() {
+            const apiUrl = `https://api.github.com/repos/${GITHUB_USER}/${REPO_NAME}/contents/${FOLDER_PATH}`;
+            
+            try {
+                const response = await fetch(apiUrl);
+                if (!response.ok) throw new Error(`GitHub API Error: ${response.status}`);
+                
+                const data = await response.json();
+                
+                // Фильтруем, оставляем только видео файлы (mp4, webm, mov)
+                videos = data
+                    .filter(file => file.name.match(/\.(mp4|webm|mov|m4v)$/i))
+                    .map(file => file.download_url); // Берем прямую ссылку на файл
+
+                if (videos.length === 0) {
+                    throw new Error("No videos found in folder");
+                }
+
+                console.log(`Loaded ${videos.length} videos from GitHub`);
+                
+                document.getElementById('main-text').innerText = "CLICK TO START";
+                document.getElementById('sub-text').innerText = `${videos.length} FILES DETECTED`;
+                appReady = true;
+
+            } catch (error) {
+                console.error(error);
+                document.getElementById('main-text').innerText = "SYSTEM FAILURE";
+                document.getElementById('sub-text').innerText = "CHECK REPO SETTINGS";
+                document.getElementById('error-detail').innerText = error.message;
+                document.getElementById('error-screen').style.display = 'flex';
+                // Если API не сработал (например, лимит запросов), можно добавить пару тестовых ссылок вручную:
+                // videos = ['videos/test.mp4']; appReady = true;
+            }
+        }
+        
+        // Запускаем сканирование при загрузке
+        fetchVideoList();
+
+        // --- 3. АУДИО (Белый шум) ---
+        function initAudio() {
+            if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+
+        function playStaticSound(duration = 0.5) {
+            if (!audioCtx) return;
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+
+            const bufferSize = audioCtx.sampleRate * duration;
+            const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+            const data = buffer.getChannelData(0);
+            for (let i = 0; i < bufferSize; i++) {
+                data[i] = Math.random() * 2 - 1;
+            }
+            const noiseSource = audioCtx.createBufferSource();
+            noiseSource.buffer = buffer;
+            const filter = audioCtx.createBiquadFilter();
+            filter.type = 'highpass';
+            filter.frequency.value = 800; 
+            const gainNode = audioCtx.createGain();
+            gainNode.gain.setValueAtTime(0.15, audioCtx.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+            noiseSource.connect(filter);
+            filter.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+            noiseSource.start();
+        }
+
+        // --- 4. ГРАФИКА (Снег) ---
+        const canvas = document.getElementById('static-canvas');
+        const ctx = canvas.getContext('2d');
+        function resizeCanvas() {
+            canvas.width = window.innerWidth / 2;
+            canvas.height = window.innerHeight / 2;
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+        
+        // Запускаем шум сразу
+        function startVisualNoise() {
+            canvas.style.display = 'block';
+            isNoiseActive = true;
+            const w = canvas.width;
+            const h = canvas.height;
+            const idata = ctx.createImageData(w, h);
+            const buffer32 = new Uint32Array(idata.data.buffer);
+            const len = buffer32.length;
+            function loop() {
+                if (!isNoiseActive) return;
+                for (let i = 0; i < len; i++) {
+                    buffer32[i] = (Math.random() < 0.5) ? 0xff000000 : 0xffffffff;
+                }
+                ctx.putImageData(idata, 0, 0);
+                noiseAnimationId = requestAnimationFrame(loop);
+            }
+            loop();
+        }
+        startVisualNoise();
+
+        function stopVisualNoise() {
+            isNoiseActive = false;
+            cancelAnimationFrame(noiseAnimationId);
+            canvas.style.display = 'none';
+            document.getElementById('error-screen').style.display = 'none';
+        }
+
+        // --- 5. УПРАВЛЕНИЕ ВИДЕО ПЛЕЕРОМ ---
+        
+        // Когда видео реально начало играть
+        videoElement.addEventListener('playing', () => {
+            stopVisualNoise();
+            videoElement.style.display = 'block';
+            clearTimeout(skipTimeout);
+        });
+
+        // Когда видео закончилось
+        videoElement.addEventListener('ended', () => {
+            switchChannel();
+        });
+
+        // Ошибка загрузки файла
+        videoElement.addEventListener('error', (e) => {
+            console.log("Video Error:", videoElement.error);
+            handleError("FILE_LOAD_ERROR");
+        });
+
+        function handleError(code) {
+            if(!isNoiseActive) startVisualNoise();
+            videoElement.style.display = 'none';
+            
+            const errorScreen = document.getElementById('error-screen');
+            document.getElementById('error-detail').innerText = code;
+            errorScreen.style.display = 'flex';
+            
+            playStaticSound(0.2);
+
+            if (skipTimeout) clearTimeout(skipTimeout);
+            skipTimeout = setTimeout(() => {
+                switchChannel();
+            }, 1500); // Чуть больше времени на чтение ошибки
+        }
+
+        // --- 6. ПЕРЕКЛЮЧЕНИЕ КАНАЛОВ ---
+        function switchChannel() {
+            if (!appReady) return; // Не переключаем, пока не получили список
+
+            initAudio();
+            document.getElementById('intro').style.display = 'none';
+            
+            // Включаем шум и прячем старое видео
+            startVisualNoise();
+            videoElement.style.display = 'none';
+            playStaticSound(0.35);
+
+            // Выбираем рандомное видео
+            let newIdx;
+            if (videos.length > 1) {
+                do {
+                    newIdx = Math.floor(Math.random() * videos.length);
+                } while (newIdx === currentIdx);
+            } else {
+                newIdx = 0;
+            }
+            currentIdx = newIdx;
+            
+            const videoUrl = videos[currentIdx];
+            console.log("Playing:", videoUrl);
+
+            // Загружаем и играем
+            videoElement.src = videoUrl;
+            videoElement.play().catch(err => {
+                console.warn("Autoplay blocked or error:", err);
+                // Если браузер заблокировал звук, ждем клика
+            });
+        }
+
+        // КЛИК ПО ЭКРАНУ
+        document.getElementById('click-layer').addEventListener('click', () => {
+            if (!appReady) return;
+            
+            // Если видео на паузе (первый клик)
+            if (videoElement.paused && videoElement.src) {
+                videoElement.play();
+            } else {
+                // Иначе переключаем канал
+                switchChannel();
+            }
+        });
+
+    </script>
+</body>
+</html>
