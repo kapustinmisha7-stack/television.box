@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Custom TV Channel</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            background-color: #111;
+            overflow: hidden;
+            font-family: 'Courier New', Courier, monospace;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        #tv-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+            pointer-events: none;
+        }
+
+        iframe {
+            width: 100vw;
+            height: 100vh;
+            border: none;
+        }
+
+        /* Шум */
+        canvas#static-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 20;
+            display: none; 
+        }
+
+        /* Экран ошибки / пропуска */
+        #error-screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 15;
+            background: #000;
+            color: #ff3333;
+            display: none;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            padding: 20px;
+        }
+
+        #error-screen h2 { font-size: 24px; margin-bottom: 10px; text-transform: uppercase; }
+        #error-screen p { font-size: 14px; opacity: 0.8; }
+        
+        /* Интро */
+        #intro {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            z-index: 30;
+            font-weight: bold;
+            letter-spacing: 4px;
+            text-align: center;
+            pointer-events: none;
+            text-shadow: 0 2px 10px rgba(0,0,0,0.8);
+            mix-blend-mode: exclusion;
+        }
+
+        #click-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 100;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="intro">
+        <div id="main-text">INITIALIZING...</div>
+        <div id="sub-text" style="font-size: 12px; margin-top: 10px; opacity: 0.7;">LOADING FREQUENCIES</div>
+    </div>
+
+    <canvas id="static-canvas"></canvas>
+
+    <div id="error-screen">
+        <h2>BAD SIGNAL</h2>
+        <p>TUNING TO NEXT FREQUENCY...</p>
+        <p id="error-detail" style="font-size: 10px; margin-top: 20px; opacity: 0.5;"></p>
+    </div>
+
+    <div id="tv-container">
+        <div id="player"></div>
+    </div>
+
+    <div id="click-layer"></div>
+
+    <script>
+        // --- 1. СПИСОК ВИДЕО ---
+        const videos = [
+            "5MvP90YD_eE", "KyxpJMOTMMg", "qScmKjbSENk", "-cB55r2JWB0", 
+            "1q58PPS89ec", "3DjyDfmcjZI", "8Yxq4epWO44", "9zm2-PonjX8", 
+            "D0icZxLucvI", "GGbDBkvHcnQ", "JwelCybdgCk", "PBjex1FV3kY", 
+            "XN-TFfk9AXY", "Yfev5Jt_VqQ", "hPTzejnJGW8", "sKpP_1XFCTI", 
+            "9nF36kYqq9A", "AUjzlbmuchM", "CoIk0iy8RUc", "I6OzBaUEQng", 
+            "KK7d-YYE-8o", "RFq7flv-C0g", "akO08URs-a8", "hdQSxlBBGd4", 
+            "j1JQK9Gp0U4", "o0Bqi83jYiU", "qbaijgQ41QI", "yOTxsO4z0Ig", 
+            "-2ucQUMwl58", "0Z98oaycf0g", "3YEcse1-KRs", "78GJuIvagZo", 
+            "BeyYRCzYJ4Q", "HXcWyqieM1I", "KtxQhRcZv84", "cmubT3HQv-8", 
+            "koRa8l7OXl0", "oV5M1VDJ5Gw", "wPOt8R4G98U", "zN_wp0z4R1E", 
+            "7SJ_PlXyZkg", "L54QcURkicc", "OtgDrh9FFNw", "Rb-nB30yWrM", 
+            "Tqhx6v-vng8", "e_FM8AJ7PfE", "pgmWs8xqUr0", "seb40RZsPgY", 
+            "skvyO_RZsJI", "snoKe8NOSRU", "wuo5mywaFiI", "3Esnb536pfY", 
+            "B79n9xbgraM", "DRffgGbd65w", "GNM6VMpzGeY", "MCJiVp56es0", 
+            "pbxglkyizHs", "RnmMWIvLNQk"
+        ];
+
+        let player;
+        let currentIdx = -1;
+        let isNoiseActive = false;
+        let audioCtx = null;
+        let noiseAnimationId;
+        let skipTimeout;
+        let playerReady = false; // Добавлено
+
+        // --- 2. АУДИО (Белый шум) ---
+        function initAudio() {
+            if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+
+        function playStaticSound(duration = 0.5) {
+            if (!audioCtx) return;
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+
+            const bufferSize = audioCtx.sampleRate * duration;
+            const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+            const data = buffer.getChannelData(0);
+            for (let i = 0; i < bufferSize; i++) {
+                data[i] = Math.random() * 2 - 1;
+            }
+            const noiseSource = audioCtx.createBufferSource();
+            noiseSource.buffer = buffer;
+            const filter = audioCtx.createBiquadFilter();
+            filter.type = 'highpass';
+            filter.frequency.value = 800; 
+            const gainNode = audioCtx.createGain();
+            gainNode.gain.setValueAtTime(0.15, audioCtx.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+            noiseSource.connect(filter);
+            filter.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+            noiseSource.start();
+        }
+
+        // --- 3. ГРАФИКА (Снег) ---
+        const canvas = document.getElementById('static-canvas');
+        const ctx = canvas.getContext('2d');
+        function resizeCanvas() {
+            canvas.width = window.innerWidth / 2;
+            canvas.height = window.innerHeight / 2;
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        function startVisualNoise() {
+            canvas.style.display = 'block';
+            isNoiseActive = true;
+            const w = canvas.width;
+            const h = canvas.height;
+            const idata = ctx.createImageData(w, h);
+            const buffer32 = new Uint32Array(idata.data.buffer);
+            const len = buffer32.length;
+            function loop() {
+                if (!isNoiseActive) return;
+                for (let i = 0; i < len; i++) {
+                    buffer32[i] = (Math.random() < 0.5) ? 0xff000000 : 0xffffffff;
+                }
+                ctx.putImageData(idata, 0, 0);
+                noiseAnimationId = requestAnimationFrame(loop);
+            }
+            loop();
+        }
+
+        function stopVisualNoise() {
+            isNoiseActive = false;
+            cancelAnimationFrame(noiseAnimationId);
+            canvas.style.display = 'none';
+            document.getElementById('error-screen').style.display = 'none';
+        }
+
+        // --- 4. YOUTUBE INITIALIZATION ---
+        var tag = document.createElement('script');
+        tag.src = "https://www.youtube.com/iframe_api";
+        var firstScriptTag = document.getElementsByTagName('script')[0];
+        firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
+
+        function onYouTubeIframeAPIReady() {
+            player = new YT.Player('player', {
+                height: '100%',
+                width: '100%',
+                playerVars: {
+                    'controls': 0,
+                    'disablekb': 1,
+                    'fs': 0,
+                    'iv_load_policy': 3,
+                    'modestbranding': 1,
+                    'rel': 0,
+                    'showinfo': 0,
+                    'origin': window.location.origin
+                },
+                events: {
+                    'onReady': onPlayerReady,
+                    'onStateChange': onPlayerStateChange,
+                    'onError': onPlayerError
+                }
+            });
+        }
+
+        // ОБНОВЛЕННЫЙ БЛОК onPlayerReady
+        function onPlayerReady(event) {
+            playerReady = true;
+            document.getElementById('main-text').innerText = "CLICK TO START";
+            document.getElementById('sub-text').innerText = `${videos.length} CHANNELS MEMORIZED`;
+        }
+
+        function onPlayerStateChange(event) {
+            if (event.data === YT.PlayerState.PLAYING) {
+                stopVisualNoise();
+                clearTimeout(skipTimeout);
+            }
+            if (event.data === YT.PlayerState.ENDED) {
+                switchChannel();
+            }
+        }
+
+        // ОБНОВЛЕННЫЙ БЛОК onPlayerError
+        function onPlayerError(event) {
+            console.log("Error code:", event.data, " - Auto Skipping...");
+
+            if (!isNoiseActive) startVisualNoise();
+
+            const errorScreen = document.getElementById('error-screen');
+            document.getElementById('error-detail').innerText = `ERR_CODE_${event.data}`;
+            errorScreen.style.display = 'flex';
+
+            playStaticSound(0.2);
+
+            if (skipTimeout) {
+                clearTimeout(skipTimeout);
+            }
+            skipTimeout = setTimeout(() => {
+                switchChannel();
+            }, 800);
+        }
+
+        // --- 6. ПЕРЕКЛЮЧЕНИЕ ---
+        function switchChannel() {
+            initAudio();
+            
+            document.getElementById('intro').style.display = 'none';
+            
+            startVisualNoise();
+            playStaticSound(0.35);
+
+            let newIdx;
+            if (videos.length > 1) {
+                do {
+                    newIdx = Math.floor(Math.random() * videos.length);
+                } while (newIdx === currentIdx);
+            } else {
+                newIdx = 0;
+            }
+            
+            currentIdx = newIdx;
+            const videoID = videos[currentIdx];
+            
+            console.log("Channel:", currentIdx, "ID:", videoID);
+
+            if (player && player.loadVideoById) {
+                player.loadVideoById(videoID);
+            }
+        }
+
+        // ОБНОВЛЕННЫЙ БЛОК КЛИКА
+        document.getElementById('click-layer').addEventListener('click', () => {
+            if (!playerReady) return;
+            switchChannel();
+        });
+
+    </script>
+</body>
+</html>
