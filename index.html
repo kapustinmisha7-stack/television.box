@@ -2,19 +2,28 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Local TV Clone</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>television.box</title>
     <style>
+        /* Глобальный сброс стилей для мобилок */
+        * {
+            -webkit-tap-highlight-color: transparent; /* Убирает синий клик на Android/iOS */
+            outline: none;
+            box-sizing: border-box;
+        }
+
         body, html {
             margin: 0;
             padding: 0;
             width: 100%;
             height: 100%;
-            background-color: #111;
+            background-color: #000; /* Черный фон для полос по краям */
             overflow: hidden;
             font-family: 'Courier New', Courier, monospace;
             cursor: pointer;
             user-select: none;
+            -webkit-user-select: none;
+            touch-action: manipulation; /* Улучшает реакцию на тач */
         }
 
         /* Контейнер видео */
@@ -26,15 +35,19 @@
             height: 100%;
             z-index: 1;
             pointer-events: none;
-            background: #000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
         }
 
-        /* HTML5 Видео плеер */
+        /* ИСПРАВЛЕНИЕ МАСШТАБА */
         video {
             width: 100%;
             height: 100%;
-            object-fit: cover; /* Чтобы видео заполняло весь экран без черных полос */
-            display: none; /* Скрыто, пока не начнет играть */
+            /* contain = уместить все видео в экран, сохраняя пропорции. 
+               cover = заполнить экран, обрезав края. */
+            object-fit: contain; 
+            display: none;
         }
 
         /* Шум (Canvas) */
@@ -83,6 +96,7 @@
             pointer-events: none;
             text-shadow: 0 2px 10px rgba(0,0,0,0.8);
             mix-blend-mode: exclusion;
+            width: 100%;
         }
 
         #click-layer {
@@ -111,23 +125,23 @@
     </div>
 
     <div id="tv-container">
-        <!-- HTML5 Video Element вместо Iframe -->
+        <!-- playsinline важен для iOS, чтобы видео не открывалось в плеере на весь экран само -->
         <video id="tv-video" playsinline webkit-playsinline preload="auto"></video>
     </div>
 
     <div id="click-layer"></div>
 
     <script>
-        // --- 1. НАСТРОЙКИ GITHUB ---
+        // --- 1. НАСТРОЙКИ ---
         const GITHUB_USER = 'kapustinmisha7-stack'; 
         
-        // ! ВАЖНО: ВПИШИ СЮДА НАЗВАНИЕ СВОЕГО РЕПОЗИТОРИЯ (как в url)
-        // Например, если ссылка github.com/user/my-tv-site, то пиши 'my-tv-site'
-        const REPO_NAME = 'super-happiness'; 
+        // Судя по скриншоту, твой сайт лежит в корневом репозитории
+        // Если вдруг не заработает, верни 'tv-clone' или название папки проекта
+        const REPO_NAME = 'kapustinmisha7-stack.github.io'; 
         
-        const FOLDER_PATH = 'videos'; // Папка с видео
+        const FOLDER_PATH = 'videos'; 
         
-        let videos = []; // Сюда загрузятся ссылки
+        let videos = []; 
         let currentIdx = -1;
         let isNoiseActive = true;
         let audioCtx = null;
@@ -137,46 +151,41 @@
 
         const videoElement = document.getElementById('tv-video');
 
-        // --- 2. ЗАГРУЗКА СПИСКА ФАЙЛОВ ИЗ GITHUB API ---
+        // --- 2. GITHUB API ---
         async function fetchVideoList() {
             const apiUrl = `https://api.github.com/repos/${GITHUB_USER}/${REPO_NAME}/contents/${FOLDER_PATH}`;
             
+            console.log("Fetching from:", apiUrl);
+
             try {
                 const response = await fetch(apiUrl);
-                if (!response.ok) throw new Error(`GitHub API Error: ${response.status}`);
+                if (!response.ok) throw new Error(`GitHub Error: ${response.status}`);
                 
                 const data = await response.json();
                 
-                // Фильтруем, оставляем только видео файлы (mp4, webm, mov)
                 videos = data
                     .filter(file => file.name.match(/\.(mp4|webm|mov|m4v)$/i))
-                    .map(file => file.download_url); // Берем прямую ссылку на файл
+                    .map(file => file.download_url);
 
-                if (videos.length === 0) {
-                    throw new Error("No videos found in folder");
-                }
+                if (videos.length === 0) throw new Error("No videos found");
 
-                console.log(`Loaded ${videos.length} videos from GitHub`);
-                
-                document.getElementById('main-text').innerText = "CLICK TO START";
-                document.getElementById('sub-text').innerText = `${videos.length} FILES DETECTED`;
+                console.log(`Loaded ${videos.length} videos`);
+                document.getElementById('main-text').innerText = "television.box";
+                document.getElementById('sub-text').innerText = "TAP TO START";
                 appReady = true;
 
             } catch (error) {
                 console.error(error);
                 document.getElementById('main-text').innerText = "SYSTEM FAILURE";
-                document.getElementById('sub-text').innerText = "CHECK REPO SETTINGS";
+                document.getElementById('sub-text').innerText = "CHECK CONSOLE";
                 document.getElementById('error-detail').innerText = error.message;
                 document.getElementById('error-screen').style.display = 'flex';
-                // Если API не сработал (например, лимит запросов), можно добавить пару тестовых ссылок вручную:
-                // videos = ['videos/test.mp4']; appReady = true;
             }
         }
         
-        // Запускаем сканирование при загрузке
         fetchVideoList();
 
-        // --- 3. АУДИО (Белый шум) ---
+        // --- 3. АУДИО ---
         function initAudio() {
             if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         }
@@ -205,17 +214,18 @@
             noiseSource.start();
         }
 
-        // --- 4. ГРАФИКА (Снег) ---
+        // --- 4. ГРАФИКА ---
         const canvas = document.getElementById('static-canvas');
         const ctx = canvas.getContext('2d');
+        
         function resizeCanvas() {
+            // Для лучшей производительности на мобилках уменьшаем разрешение канваса
             canvas.width = window.innerWidth / 2;
             canvas.height = window.innerHeight / 2;
         }
         window.addEventListener('resize', resizeCanvas);
         resizeCanvas();
         
-        // Запускаем шум сразу
         function startVisualNoise() {
             canvas.style.display = 'block';
             isNoiseActive = true;
@@ -243,22 +253,16 @@
             document.getElementById('error-screen').style.display = 'none';
         }
 
-        // --- 5. УПРАВЛЕНИЕ ВИДЕО ПЛЕЕРОМ ---
-        
-        // Когда видео реально начало играть
+        // --- 5. ВИДЕО ЛОГИКА ---
         videoElement.addEventListener('playing', () => {
             stopVisualNoise();
             videoElement.style.display = 'block';
             clearTimeout(skipTimeout);
         });
 
-        // Когда видео закончилось
-        videoElement.addEventListener('ended', () => {
-            switchChannel();
-        });
+        videoElement.addEventListener('ended', switchChannel);
 
-        // Ошибка загрузки файла
-        videoElement.addEventListener('error', (e) => {
+        videoElement.addEventListener('error', () => {
             console.log("Video Error:", videoElement.error);
             handleError("FILE_LOAD_ERROR");
         });
@@ -274,24 +278,19 @@
             playStaticSound(0.2);
 
             if (skipTimeout) clearTimeout(skipTimeout);
-            skipTimeout = setTimeout(() => {
-                switchChannel();
-            }, 1500); // Чуть больше времени на чтение ошибки
+            skipTimeout = setTimeout(switchChannel, 1500);
         }
 
-        // --- 6. ПЕРЕКЛЮЧЕНИЕ КАНАЛОВ ---
         function switchChannel() {
-            if (!appReady) return; // Не переключаем, пока не получили список
+            if (!appReady) return; 
 
             initAudio();
             document.getElementById('intro').style.display = 'none';
             
-            // Включаем шум и прячем старое видео
             startVisualNoise();
             videoElement.style.display = 'none';
             playStaticSound(0.35);
 
-            // Выбираем рандомное видео
             let newIdx;
             if (videos.length > 1) {
                 do {
@@ -302,29 +301,37 @@
             }
             currentIdx = newIdx;
             
-            const videoUrl = videos[currentIdx];
-            console.log("Playing:", videoUrl);
-
-            // Загружаем и играем
-            videoElement.src = videoUrl;
-            videoElement.play().catch(err => {
-                console.warn("Autoplay blocked or error:", err);
-                // Если браузер заблокировал звук, ждем клика
-            });
+            // Важный хак для мобилок: сначала сброс src, потом загрузка
+            videoElement.pause();
+            videoElement.src = videos[currentIdx];
+            videoElement.load(); 
+            
+            const playPromise = videoElement.play();
+            if (playPromise !== undefined) {
+                playPromise.catch(error => {
+                    console.warn("Playback prevented:", error);
+                    // Обычно это случается, если юзер еще не кликнул.
+                    // Но у нас запуск идет через клик, так что должно работать.
+                });
+            }
         }
 
-        // КЛИК ПО ЭКРАНУ
-        document.getElementById('click-layer').addEventListener('click', () => {
+        document.getElementById('click-layer').addEventListener('click', (e) => {
+            e.preventDefault(); // Предотвращает стандартные зумы и выделения
+            
             if (!appReady) return;
             
-            // Если видео на паузе (первый клик)
             if (videoElement.paused && videoElement.src) {
-                videoElement.play();
+                videoElement.play().catch(() => switchChannel());
             } else {
-                // Иначе переключаем канал
                 switchChannel();
             }
         });
+
+        // Блокировка двойного тапа (зума)
+        document.addEventListener('dblclick', function(event) {
+            event.preventDefault();
+        }, { passive: false });
 
     </script>
 </body>
