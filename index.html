@@ -3,143 +3,328 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>television.box</title>
+    <title>Television.box</title>
     <style>
-        /* Глобальный сброс стилей для мобилок */
-        * {
-            -webkit-tap-highlight-color: transparent; /* Убирает синий клик на Android/iOS */
-            outline: none;
-            box-sizing: border-box;
+        :root {
+            --primary: #ff0000;
+            --text: #ffffff;
+            --text-sec: #aaaaaa;
+            --bg: #0f0f0f;
+            --overlay: linear-gradient(to top, rgba(0,0,0,0.9) 0%, rgba(0,0,0,0.4) 40%, rgba(0,0,0,0) 100%);
         }
 
-        body, html {
+        * {
             margin: 0;
             padding: 0;
-            width: 100%;
-            height: 100%;
-            background-color: #000; /* Черный фон для полос по краям */
-            overflow: hidden;
-            font-family: 'Courier New', Courier, monospace;
-            cursor: pointer;
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
             user-select: none;
-            -webkit-user-select: none;
-            touch-action: manipulation; /* Улучшает реакцию на тач */
         }
 
-        /* Контейнер видео */
-        #tv-container {
-            position: absolute;
-            top: 0;
-            left: 0;
+        body {
+            background-color: var(--bg);
+            color: var(--text);
+            height: 100vh;
+            width: 100vw;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* --- ВИДЕО СЛОЙ --- */
+        #main-container {
+            position: relative;
+            flex: 1;
             width: 100%;
             height: 100%;
-            z-index: 1;
-            pointer-events: none;
-            display: flex;
-            justify-content: center;
-            align-items: center;
+            background: #000;
+            overflow: hidden;
+            cursor: pointer;
         }
 
-        /* ИСПРАВЛЕНИЕ МАСШТАБА */
         video {
             width: 100%;
             height: 100%;
-            /* contain = уместить все видео в экран, сохраняя пропорции. 
-               cover = заполнить экран, обрезав края. */
-            object-fit: contain; 
-            display: none;
+            object-fit: contain;
+            display: block;
         }
 
-        /* Шум (Canvas) */
-        canvas#static-canvas {
+        /* Шум и Ошибки */
+        canvas#static-canvas, #error-screen {
             position: absolute;
             top: 0;
             left: 0;
             width: 100%;
             height: 100%;
-            z-index: 20;
-            display: block; 
+            z-index: 10;
+            pointer-events: none; /* Пропускаем клики сквозь шум */
         }
-
-        /* Экран ошибки */
+        
         #error-screen {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            z-index: 15;
-            background: #000;
-            color: #ff3333;
             display: none;
+            background: #000;
+            z-index: 15;
             flex-direction: column;
             justify-content: center;
             align-items: center;
-            text-align: center;
-            padding: 20px;
+            color: var(--primary);
         }
 
-        #error-screen h2 { font-size: 24px; margin-bottom: 10px; text-transform: uppercase; }
-        #error-screen p { font-size: 14px; opacity: 0.8; }
+        /* --- ИНТЕРФЕЙС (UI) --- */
+        
+        /* Верхняя шапка */
+        header {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            padding: 15px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            z-index: 50;
+            background: linear-gradient(to bottom, rgba(0,0,0,0.8), transparent);
+            pointer-events: none; /* Чтобы клик по шапке переключал видео */
+        }
 
-        /* Интро */
-        #intro {
+        .logo {
+            font-weight: 800;
+            font-size: 20px;
+            letter-spacing: -1px;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            pointer-events: auto;
+        }
+        .logo span { color: var(--primary); }
+        
+        .header-icons {
+            display: flex;
+            gap: 20px;
+            pointer-events: auto;
+        }
+
+        /* Нижняя панель инфо */
+        .video-overlay {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            padding: 20px;
+            padding-bottom: 30px;
+            background: var(--overlay);
+            z-index: 50;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            pointer-events: none; /* Важно! */
+        }
+
+        /* Прогресс бар */
+        .progress-container {
+            width: 100%;
+            height: 4px;
+            background: rgba(255,255,255,0.2);
+            border-radius: 2px;
+            overflow: hidden;
+            margin-bottom: 5px;
+        }
+        .progress-bar {
+            height: 100%;
+            width: 0%;
+            background: var(--primary);
+            transition: width 0.1s linear;
+        }
+
+        /* Информация о видео */
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+            pointer-events: auto;
+        }
+
+        .channel-info {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: #333;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-weight: bold;
+            font-size: 14px;
+            background-size: cover;
+        }
+
+        .text-info {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .video-title {
+            font-size: 16px;
+            font-weight: 600;
+            max-width: 60vw;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .meta-data {
+            font-size: 12px;
+            color: var(--text-sec);
+        }
+
+        .subscribe-btn {
+            background: var(--text);
+            color: #000;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 700;
+            margin-left: 10px;
+            cursor: pointer;
+        }
+
+        /* Кнопки действий (справа) */
+        .actions {
+            display: flex;
+            gap: 20px;
+            align-items: center;
+        }
+
+        .action-btn {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+            background: none;
+            border: none;
+            color: white;
+            cursor: pointer;
+        }
+        
+        .action-btn svg {
+            width: 28px;
+            height: 28px;
+            fill: white;
+            filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5));
+        }
+        
+        .action-btn span {
+            font-size: 10px;
+            font-weight: 600;
+        }
+
+        .liked svg { fill: var(--primary); }
+
+        /* Иконка "Tap to switch" */
+        .hint-overlay {
             position: absolute;
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            color: white;
-            z-index: 30;
-            font-weight: bold;
-            letter-spacing: 4px;
-            text-align: center;
             pointer-events: none;
-            text-shadow: 0 2px 10px rgba(0,0,0,0.8);
-            mix-blend-mode: exclusion;
-            width: 100%;
+            opacity: 0;
+            transition: opacity 0.3s;
+            z-index: 40;
+            text-align: center;
+            text-shadow: 0 2px 10px black;
         }
+        
+        /* Анимация иконок */
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.2); }
+            100% { transform: scale(1); }
+        }
+        .pulse { animation: pulse 0.3s ease-out; }
 
-        #click-layer {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            z-index: 100;
-        }
     </style>
 </head>
 <body>
 
-    <div id="intro">
-        <div id="main-text">INITIALIZING...</div>
-        <div id="sub-text" style="font-size: 12px; margin-top: 10px; opacity: 0.7;">SCANNING REPO FOLDER</div>
+    <!-- Header -->
+    <header>
+        <div class="logo">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="red"><path d="M21 3H3C1.9 3 1 3.9 1 5v14c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H3V5h18v14zM8 15c0-1.66 1.34-3 3-3 .35 0 .69.07 1 .18V6h5v2h-3v7.03A3.003 3.003 0 0 1 11 15z"/></svg>
+            Television<span>.box</span>
+        </div>
+        <div class="header-icons">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z"/></svg>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <div id="main-container">
+        <canvas id="static-canvas"></canvas>
+        <div id="error-screen">
+            <h2>NO SIGNAL</h2>
+            <p>CONNECTING TO SATELLITE...</p>
+        </div>
+        
+        <!-- Хинт для пользователя -->
+        <div class="hint-overlay" id="hint-text">
+            <h1>TAP TO SWITCH</h1>
+        </div>
+
+        <video id="tv-video" playsinline webkit-playsinline loop preload="auto"></video>
+
+        <!-- Overlay UI -->
+        <div class="video-overlay">
+            <div class="progress-container">
+                <div class="progress-bar" id="prog-bar"></div>
+            </div>
+            
+            <div class="info-row">
+                <!-- Channel Info -->
+                <div class="channel-info">
+                    <div class="avatar" id="ch-avatar">TV</div>
+                    <div class="text-info">
+                        <div class="video-title" id="vid-title">Loading...</div>
+                        <div class="meta-data">
+                            <span id="ch-name">Channel Name</span> • <span id="view-count">0 views</span>
+                        </div>
+                    </div>
+                    <button class="subscribe-btn">Subscribe</button>
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="actions">
+                    <button class="action-btn" id="like-btn">
+                        <svg viewBox="0 0 24 24"><path d="M1 21h4V9H1v12zm22-11c0-1.1-.9-2-2-2h-6.31l.95-4.57.03-.32c0-.41-.17-.79-.44-1.06L14.17 1 7.59 7.59C7.22 7.95 7 8.45 7 9v10c0 1.1.9 2 2 2h9c.83 0 1.54-.5 2.14-1.18l4.37-11.48c.1-.23.15-.5.15-.79V10z"/></svg>
+                        <span id="like-count">12K</span>
+                    </button>
+                    <button class="action-btn">
+                        <svg viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92 1.61 0 2.92-1.31 2.92-2.92s-1.31-2.92-2.92-2.92z"/></svg>
+                        <span>Share</span>
+                    </button>
+                    <!-- Кнопка "Ещё" (или переключение) -->
+                    <button class="action-btn" id="next-btn-ui">
+                        <svg viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
+                        <span>Next</span>
+                    </button>
+                </div>
+            </div>
+        </div>
     </div>
-
-    <canvas id="static-canvas"></canvas>
-
-    <div id="error-screen">
-        <h2>BAD SIGNAL</h2>
-        <p>FILE CORRUPTED OR MISSING</p>
-        <p id="error-detail" style="font-size: 10px; margin-top: 20px; opacity: 0.5;"></p>
-    </div>
-
-    <div id="tv-container">
-        <!-- playsinline важен для iOS, чтобы видео не открывалось в плеере на весь экран само -->
-        <video id="tv-video" playsinline webkit-playsinline preload="auto"></video>
-    </div>
-
-    <div id="click-layer"></div>
 
     <script>
-        // --- 1. НАСТРОЙКИ ---
-        const GITHUB_USER = 'kapustinmisha7-stack'; 
-        
-        // Судя по скриншоту, твой сайт лежит в корневом репозитории
-        // Если вдруг не заработает, верни 'tv-clone' или название папки проекта
-        const REPO_NAME = 'super-happiness'; 
-        
-        const FOLDER_PATH = 'videos'; 
+        // --- CONFIG ---
+        const GITHUB_USER = 'kapustinmisha7-stack';
+        const REPO_NAME = 'super-happiness'; // Твой репозиторий
+        const FOLDER_PATH = 'videos';
         
         let videos = []; 
         let currentIdx = -1;
@@ -150,188 +335,210 @@
         let appReady = false;
 
         const videoElement = document.getElementById('tv-video');
+        const mainContainer = document.getElementById('main-container');
+        const likeBtn = document.getElementById('like-btn');
 
-        // --- 2. GITHUB API ---
+        // --- ГЕНЕРАТОР ФЕЙКОВЫХ ДАННЫХ ---
+        const channelNames = ["RetroTV", "ViralClipz", "Daily Dose", "MemeVault", "Archive 99", "VHS Rip", "Cool Guy", "Randomizer"];
+        const randomColors = ["#FF5733", "#33FF57", "#3357FF", "#FF33A8", "#F3FF33", "#33FFF5"];
+
+        function generateMetadata(filename) {
+            // 1. Заголовок: Убираем расширение и подчеркивания
+            let title = filename.split('/').pop().replace(/\.(mp4|mov|webm)$/i, '').replace(/_/g, ' ').replace(/-/g, ' ');
+            title = title.charAt(0).toUpperCase() + title.slice(1); // Capitalize
+
+            // 2. Канал
+            const channel = channelNames[Math.floor(Math.random() * channelNames.length)];
+            
+            // 3. Просмотры (от 1K до 5M)
+            const views = (Math.random() * (5 - 0.1) + 0.1).toFixed(1) + 'M';
+            
+            // 4. Лайки (от 10K до 900K)
+            const likes = Math.floor(Math.random() * 900 + 10) + 'K';
+
+            // 5. Цвет аватарки
+            const color = randomColors[Math.floor(Math.random() * randomColors.length)];
+
+            return { title, channel, views, likes, color };
+        }
+
+        function updateUI(meta) {
+            document.getElementById('vid-title').innerText = meta.title;
+            document.getElementById('ch-name').innerText = meta.channel;
+            document.getElementById('view-count').innerText = meta.views + ' views • 2 hours ago';
+            document.getElementById('like-count').innerText = meta.likes;
+            
+            const avatar = document.getElementById('ch-avatar');
+            avatar.style.background = meta.color;
+            avatar.innerText = meta.channel.charAt(0);
+
+            // Сброс лайка
+            likeBtn.classList.remove('liked');
+        }
+
+        // --- GITHUB FETCH ---
         async function fetchVideoList() {
             const apiUrl = `https://api.github.com/repos/${GITHUB_USER}/${REPO_NAME}/contents/${FOLDER_PATH}`;
-            
-            console.log("Fetching from:", apiUrl);
-
             try {
                 const response = await fetch(apiUrl);
-                if (!response.ok) throw new Error(`GitHub Error: ${response.status}`);
-                
+                if (!response.ok) throw new Error('Repo not found');
                 const data = await response.json();
                 
+                // Сохраняем объекты { url, name }
                 videos = data
-                    .filter(file => file.name.match(/\.(mp4|webm|mov|m4v)$/i))
-                    .map(file => file.download_url);
+                    .filter(file => file.name.match(/\.(mp4|webm|mov)$/i))
+                    .map(file => ({
+                        url: file.download_url,
+                        name: file.name
+                    }));
 
-                if (videos.length === 0) throw new Error("No videos found");
-
-                console.log(`Loaded ${videos.length} videos`);
-                document.getElementById('main-text').innerText = "television.box";
-                document.getElementById('sub-text').innerText = "TAP TO START";
+                if (videos.length === 0) throw new Error('Empty folder');
+                
                 appReady = true;
+                document.getElementById('hint-text').style.opacity = 1; // Показать "Tap to switch"
 
             } catch (error) {
                 console.error(error);
-                document.getElementById('main-text').innerText = "SYSTEM FAILURE";
-                document.getElementById('sub-text').innerText = "CHECK CONSOLE";
-                document.getElementById('error-detail').innerText = error.message;
                 document.getElementById('error-screen').style.display = 'flex';
             }
         }
-        
         fetchVideoList();
 
-        // --- 3. АУДИО ---
+        // --- AUDIO ENGINE ---
         function initAudio() {
             if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         }
 
-        function playStaticSound(duration = 0.5) {
+        function playStaticSound() {
             if (!audioCtx) return;
             if (audioCtx.state === 'suspended') audioCtx.resume();
-
-            const bufferSize = audioCtx.sampleRate * duration;
-            const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
-            const data = buffer.getChannelData(0);
-            for (let i = 0; i < bufferSize; i++) {
-                data[i] = Math.random() * 2 - 1;
-            }
-            const noiseSource = audioCtx.createBufferSource();
-            noiseSource.buffer = buffer;
-            const filter = audioCtx.createBiquadFilter();
-            filter.type = 'highpass';
-            filter.frequency.value = 800; 
-            const gainNode = audioCtx.createGain();
-            gainNode.gain.setValueAtTime(0.15, audioCtx.currentTime);
-            gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
-            noiseSource.connect(filter);
-            filter.connect(gainNode);
-            gainNode.connect(audioCtx.destination);
-            noiseSource.start();
+            const dur = 0.4;
+            const buf = audioCtx.createBuffer(1, audioCtx.sampleRate * dur, audioCtx.sampleRate);
+            const data = buf.getChannelData(0);
+            for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+            
+            const src = audioCtx.createBufferSource();
+            src.buffer = buf;
+            const gain = audioCtx.createGain();
+            gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + dur);
+            
+            src.connect(gain);
+            gain.connect(audioCtx.destination);
+            src.start();
         }
 
-        // --- 4. ГРАФИКА ---
+        // --- VISUAL NOISE ---
         const canvas = document.getElementById('static-canvas');
         const ctx = canvas.getContext('2d');
-        
-        function resizeCanvas() {
-            // Для лучшей производительности на мобилках уменьшаем разрешение канваса
-            canvas.width = window.innerWidth / 2;
-            canvas.height = window.innerHeight / 2;
-        }
+        function resizeCanvas() { canvas.width = window.innerWidth/2; canvas.height = window.innerHeight/2; }
         window.addEventListener('resize', resizeCanvas);
         resizeCanvas();
-        
-        function startVisualNoise() {
+
+        function startNoise() {
             canvas.style.display = 'block';
             isNoiseActive = true;
-            const w = canvas.width;
-            const h = canvas.height;
-            const idata = ctx.createImageData(w, h);
-            const buffer32 = new Uint32Array(idata.data.buffer);
-            const len = buffer32.length;
+            const idata = ctx.createImageData(canvas.width, canvas.height);
+            const buf = new Uint32Array(idata.data.buffer);
             function loop() {
                 if (!isNoiseActive) return;
-                for (let i = 0; i < len; i++) {
-                    buffer32[i] = (Math.random() < 0.5) ? 0xff000000 : 0xffffffff;
-                }
+                for (let i=0; i<buf.length; i++) buf[i] = Math.random() < 0.5 ? 0xff000000 : 0xffffffff;
                 ctx.putImageData(idata, 0, 0);
                 noiseAnimationId = requestAnimationFrame(loop);
             }
             loop();
         }
-        startVisualNoise();
+        startNoise();
 
-        function stopVisualNoise() {
+        function stopNoise() {
             isNoiseActive = false;
             cancelAnimationFrame(noiseAnimationId);
             canvas.style.display = 'none';
-            document.getElementById('error-screen').style.display = 'none';
+            document.getElementById('hint-text').style.opacity = 0; // Скрыть хинт
         }
 
-        // --- 5. ВИДЕО ЛОГИКА ---
+        // --- LOGIC ---
+        
+        function switchChannel() {
+            if (!appReady) return;
+            
+            initAudio();
+            playStaticSound();
+            startNoise();
+            
+            videoElement.pause();
+            videoElement.style.display = 'none';
+
+            // Рандом
+            let newIdx;
+            if(videos.length > 1) {
+                do { newIdx = Math.floor(Math.random() * videos.length); } while(newIdx === currentIdx);
+            } else { newIdx = 0; }
+            currentIdx = newIdx;
+
+            const videoData = videos[currentIdx];
+
+            // Обновляем UI
+            updateUI(generateMetadata(videoData.name));
+
+            // Загружаем
+            videoElement.src = videoData.url;
+            videoElement.load();
+            
+            // Пробуем играть
+            videoElement.play().catch(e => console.log("Autoplay prevented"));
+        }
+
+        // --- EVENTS ---
+
+        // 1. Когда видео реально пошло
         videoElement.addEventListener('playing', () => {
-            stopVisualNoise();
+            stopNoise();
             videoElement.style.display = 'block';
             clearTimeout(skipTimeout);
         });
 
+        // 2. Ошибка видео -> авто-скип
+        videoElement.addEventListener('error', () => {
+            if(!isNoiseActive) startNoise();
+            if(skipTimeout) clearTimeout(skipTimeout);
+            skipTimeout = setTimeout(switchChannel, 1000);
+        });
+
+        // 3. Конец видео -> переключение
         videoElement.addEventListener('ended', switchChannel);
 
-        videoElement.addEventListener('error', () => {
-            console.log("Video Error:", videoElement.error);
-            handleError("FILE_LOAD_ERROR");
-        });
-
-        function handleError(code) {
-            if(!isNoiseActive) startVisualNoise();
-            videoElement.style.display = 'none';
-            
-            const errorScreen = document.getElementById('error-screen');
-            document.getElementById('error-detail').innerText = code;
-            errorScreen.style.display = 'flex';
-            
-            playStaticSound(0.2);
-
-            if (skipTimeout) clearTimeout(skipTimeout);
-            skipTimeout = setTimeout(switchChannel, 1500);
-        }
-
-        function switchChannel() {
-            if (!appReady) return; 
-
-            initAudio();
-            document.getElementById('intro').style.display = 'none';
-            
-            startVisualNoise();
-            videoElement.style.display = 'none';
-            playStaticSound(0.35);
-
-            let newIdx;
-            if (videos.length > 1) {
-                do {
-                    newIdx = Math.floor(Math.random() * videos.length);
-                } while (newIdx === currentIdx);
-            } else {
-                newIdx = 0;
-            }
-            currentIdx = newIdx;
-            
-            // Важный хак для мобилок: сначала сброс src, потом загрузка
-            videoElement.pause();
-            videoElement.src = videos[currentIdx];
-            videoElement.load(); 
-            
-            const playPromise = videoElement.play();
-            if (playPromise !== undefined) {
-                playPromise.catch(error => {
-                    console.warn("Playback prevented:", error);
-                    // Обычно это случается, если юзер еще не кликнул.
-                    // Но у нас запуск идет через клик, так что должно работать.
-                });
-            }
-        }
-
-        document.getElementById('click-layer').addEventListener('click', (e) => {
-            e.preventDefault(); // Предотвращает стандартные зумы и выделения
-            
-            if (!appReady) return;
-            
-            if (videoElement.paused && videoElement.src) {
-                videoElement.play().catch(() => switchChannel());
-            } else {
-                switchChannel();
+        // 4. Прогресс бар
+        videoElement.addEventListener('timeupdate', () => {
+            if(videoElement.duration) {
+                const pct = (videoElement.currentTime / videoElement.duration) * 100;
+                document.getElementById('prog-bar').style.width = pct + '%';
             }
         });
 
-        // Блокировка двойного тапа (зума)
-        document.addEventListener('dblclick', function(event) {
-            event.preventDefault();
-        }, { passive: false });
+        // 5. КЛИК ПО ЭКРАНУ (ПЕРЕКЛЮЧЕНИЕ)
+        mainContainer.addEventListener('click', (e) => {
+            // Игнорируем клик, если нажали на кнопки интерфейса (они в video-overlay)
+            // Но video-overlay имеет pointer-events: none, а кнопки auto.
+            // Проверяем, не нажали ли мы на что-то кликабельное внутри контейнера
+            if (e.target.closest('.action-btn') || e.target.closest('.subscribe-btn')) return;
+
+            switchChannel();
+        });
+        
+        // Кнопка NEXT в UI
+        document.getElementById('next-btn-ui').addEventListener('click', (e) => {
+            e.stopPropagation();
+            switchChannel();
+        });
+
+        // Кнопка ЛАЙК
+        likeBtn.addEventListener('click', (e) => {
+            e.stopPropagation(); // Чтобы не переключить канал
+            likeBtn.classList.toggle('liked');
+            likeBtn.classList.add('pulse');
+            setTimeout(() => likeBtn.classList.remove('pulse'), 300);
+        });
 
     </script>
 </body>
