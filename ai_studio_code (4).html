@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Television.box</title>
+    <style>
+        :root {
+            --primary: #ff0050; /* Цвет ТикТока/Лайка */
+            --text: #ffffff;
+            --bg: #000000;
+            --glass: rgba(255, 255, 255, 0.15);
+            --glass-border: rgba(255, 255, 255, 0.1);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+            font-family: -apple-system, BlinkMacSystemFont, Roboto, Helvetica, Arial, sans-serif;
+            user-select: none;
+        }
+
+        body {
+            background-color: var(--bg);
+            color: var(--text);
+            height: 100dvh;
+            width: 100vw;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* --- ВИДЕО --- */
+        #main-container {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            background: #000;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        video {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            display: block;
+        }
+
+        /* Шум */
+        canvas#static-canvas {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            z-index: 5; pointer-events: none;
+        }
+
+        /* --- UI: HEADER --- */
+        header {
+            position: absolute;
+            top: 0; left: 0; width: 100%;
+            padding: 15px 20px;
+            padding-top: calc(15px + env(safe-area-inset-top));
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            z-index: 50;
+            background: linear-gradient(to bottom, rgba(0,0,0,0.8), transparent);
+            pointer-events: none;
+        }
+
+        .logo {
+            font-weight: 900; font-size: 22px; letter-spacing: -1px;
+            display: flex; align-items: center; gap: 6px;
+            pointer-events: auto; cursor: pointer;
+            text-shadow: 0 2px 10px rgba(0,0,0,0.5);
+        }
+        .logo span { color: var(--primary); }
+
+        /* Профиль в шапке */
+        .profile-btn {
+            width: 32px; height: 32px;
+            background: #333;
+            border-radius: 50%;
+            border: 1px solid rgba(255,255,255,0.5);
+            background-size: cover;
+            pointer-events: auto;
+            cursor: pointer;
+            display: flex; justify-content: center; align-items: center;
+            font-size: 12px; font-weight: bold;
+        }
+
+        /* --- UI: BOTTOM OVERLAY --- */
+        .ui-layer {
+            position: absolute; bottom: 0; left: 0; width: 100%;
+            height: 100%; pointer-events: none; z-index: 40;
+            display: flex; flex-direction: column; justify-content: flex-end;
+        }
+        
+        .gradient-overlay {
+            position: absolute; bottom: 0; left: 0; width: 100%; height: 50%;
+            background: linear-gradient(to top, rgba(0,0,0,0.9) 0%, transparent 100%);
+            z-index: -1;
+        }
+
+        .content-area {
+            display: flex; justify-content: space-between; align-items: flex-end;
+            padding: 20px;
+            padding-bottom: calc(20px + env(safe-area-inset-bottom));
+            width: 100%;
+        }
+
+        /* Левая часть: Инфо */
+        .info-section {
+            display: flex; flex-direction: column; gap: 10px;
+            max-width: 75%; pointer-events: auto;
+            text-shadow: 0 1px 2px rgba(0,0,0,0.8);
+        }
+
+        .channel-badge {
+            display: flex; align-items: center; gap: 8px;
+            background: rgba(255,255,255,0.15);
+            backdrop-filter: blur(10px);
+            padding: 4px 10px 4px 4px;
+            border-radius: 20px;
+            width: fit-content;
+            cursor: pointer;
+        }
+        .ch-avatar {
+            width: 24px; height: 24px; border-radius: 50%;
+            background: #555; color: white;
+            display: flex; justify-content: center; align-items: center; font-size: 10px;
+        }
+        .ch-name { font-size: 13px; font-weight: 700; }
+        
+        .subscribe-btn {
+            color: var(--primary); font-size: 12px; font-weight: 800;
+            text-transform: uppercase; margin-left: 5px;
+        }
+        .subscribe-btn.subscribed { color: #aaa; }
+
+        .video-title {
+            font-size: 16px; line-height: 1.3; font-weight: 500;
+            max-height: 65px; overflow: hidden;
+            display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
+        }
+
+        /* Правая часть: Кнопки */
+        .actions-section {
+            display: flex; flex-direction: column; gap: 25px;
+            align-items: center; pointer-events: auto;
+            padding-bottom: 10px;
+        }
+
+        .action-item { display: flex; flex-direction: column; align-items: center; gap: 5px; cursor: pointer; }
+        .icon-box {
+            width: 48px; height: 48px;
+            background: rgba(255,255,255,0.1); backdrop-filter: blur(5px);
+            border-radius: 50%;
+            display: flex; justify-content: center; align-items: center;
+            transition: transform 0.1s;
+        }
+        .icon-box:active { transform: scale(0.9); }
+        .icon-box svg { width: 26px; height: 26px; fill: white; }
+        
+        .action-label { font-size: 11px; font-weight: 600; }
+
+        /* Активное состояние лайка */
+        .liked .icon-box svg { fill: var(--primary); animation: pop 0.3s ease; }
+        @keyframes pop { 50% { transform: scale(1.4); } }
+
+        /* --- MODALS --- */
+        .modal-overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.8); backdrop-filter: blur(10px);
+            z-index: 100; display: none;
+            justify-content: center; align-items: center;
+        }
+        
+        .modal-card {
+            background: #1a1a1a; border: 1px solid #333;
+            padding: 30px; border-radius: 20px;
+            width: 90%; max-width: 350px; text-align: center;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+        }
+
+        .modal-card h2 { margin-bottom: 10px; font-size: 24px; }
+        .modal-card p { color: #aaa; font-size: 14px; margin-bottom: 20px; }
+        
+        .input-field {
+            width: 100%; padding: 12px;
+            background: #333; border: none; border-radius: 10px;
+            color: white; font-size: 16px; margin-bottom: 15px; outline: none;
+        }
+        
+        .primary-btn {
+            width: 100%; padding: 12px;
+            background: var(--primary); border: none; border-radius: 10px;
+            color: white; font-weight: bold; font-size: 16px; cursor: pointer;
+        }
+
+        /* Профиль меню */
+        #profile-menu {
+            display: none;
+            flex-direction: column;
+            align-items: flex-start;
+            text-align: left;
+        }
+        .sub-item {
+            width: 100%; padding: 12px;
+            background: #222; border-radius: 10px; margin-bottom: 8px;
+            display: flex; align-items: center; gap: 10px; cursor: pointer;
+        }
+        .sub-item:hover { background: #333; }
+
+        /* --- LOADING & ERROR --- */
+        #hint-text {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+            font-size: 20px; font-weight: 900; opacity: 0; pointer-events: none;
+            transition: opacity 0.3s; z-index: 30; text-shadow: 0 2px 10px black;
+        }
+
+    </style>
+</head>
+<body>
+
+    <!-- AUTH MODAL -->
+    <div class="modal-overlay" id="auth-modal" style="display: flex;">
+        <div class="modal-card">
+            <h2>Welcome</h2>
+            <p>Create your ID to save likes & subs.</p>
+            <input type="text" id="username-input" class="input-field" placeholder="Enter username" maxlength="15">
+            <button class="primary-btn" id="login-btn">Start Watching</button>
+        </div>
+    </div>
+
+    <!-- PROFILE MODAL -->
+    <div class="modal-overlay" id="profile-modal">
+        <div class="modal-card" id="profile-menu">
+            <div style="display:flex; justify-content:space-between; width:100%; align-items:center; margin-bottom:20px;">
+                <h2 id="profile-name">User</h2>
+                <button style="background:none; border:none; color:#666; font-size:24px;" id="close-profile">×</button>
+            </div>
+            <p style="text-align:left; margin-bottom:10px;">SUBSCRIPTIONS:</p>
+            <div id="subs-list" style="width:100%; max-height: 300px; overflow-y: auto;">
+                <!-- Сюда JS вставит подписки -->
+            </div>
+            <button class="primary-btn" id="add-channel-btn" style="margin-top:15px; background:#333;">+ Add by Link</button>
+        </div>
+    </div>
+
+    <!-- HEADER -->
+    <header>
+        <div class="logo" id="app-logo">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M21 3H3C1.9 3 1 3.9 1 5v14c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H3V5h18v14zM8 15c0-1.66 1.34-3 3-3 .35 0 .69.07 1 .18V6h5v2h-3v7.03A3.003 3.003 0 0 1 11 15z"/></svg>
+            Television<span>.box</span>
+        </div>
+        <div class="profile-btn" id="header-profile">?</div>
+    </header>
+
+    <!-- PLAYER -->
+    <div id="main-container">
+        <canvas id="static-canvas"></canvas>
+        <div id="hint-text">TAP TO SWITCH</div>
+        <video id="tv-video" playsinline webkit-playsinline loop preload="auto"></video>
+
+        <!-- INTERFACE -->
+        <div class="ui-layer">
+            <div class="gradient-overlay"></div>
+            <div class="content-area">
+                
+                <!-- Info -->
+                <div class="info-section">
+                    <div class="channel-badge" id="channel-badge">
+                        <div class="ch-avatar" id="ui-avatar">T</div>
+                        <div class="ch-name" id="ui-channel">Loading...</div>
+                        <div class="subscribe-btn" id="sub-btn">FOLLOW</div>
+                    </div>
+                    <div class="video-title" id="ui-title">Connecting to satellite stream...</div>
+                </div>
+
+                <!-- Buttons -->
+                <div class="actions-section">
+                    <!-- LIKE -->
+                    <div class="action-item" id="like-btn">
+                        <div class="icon-box">
+                            <svg viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+                        </div>
+                        <span class="action-label" id="ui-likes">Like</span>
+                    </div>
+                    
+                    <!-- SHARE -->
+                    <div class="action-item" id="share-btn">
+                        <div class="icon-box">
+                            <svg viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92 1.61 0 2.92-1.31 2.92-2.92s-1.31-2.92-2.92-2.92z"/></svg>
+                        </div>
+                        <span class="action-label">Share</span>
+                    </div>
+
+                    <!-- NEXT -->
+                    <div class="action-item" id="next-btn">
+                        <div class="icon-box" style="background: rgba(255,255,255,0.9);">
+                            <svg viewBox="0 0 24 24" style="fill:black;"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
+                        </div>
+                        <span class="action-label">Next</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- 1. ИНИЦИАЛИЗАЦИЯ СИСТЕМЫ ---
+        const urlParams = new URLSearchParams(window.location.search);
+        
+        // Параметры текущего канала (из URL или по умолчанию)
+        const CURRENT_USER = urlParams.get('user') || 'kapustinmisha7-stack';
+        const CURRENT_REPO = urlParams.get('repo') || 'super-happiness';
+        const CURRENT_FOLDER = urlParams.get('folder') || 'videos';
+        const CHANNEL_ID = `${CURRENT_USER}/${CURRENT_REPO}`;
+
+        // Состояние плеера
+        let videos = [];
+        let currentIdx = -1;
+        let isNoiseActive = true;
+        let appReady = false;
+        let skipTimeout;
+        
+        // Аудио
+        let audioCtx = null;
+        
+        // --- 2. БАЗА ДАННЫХ (LocalStorage) ---
+        const DB = {
+            user: localStorage.getItem('tv_username'),
+            likes: JSON.parse(localStorage.getItem('tv_likes')) || {}, // { video_url: true }
+            subs: JSON.parse(localStorage.getItem('tv_subs')) || [],   // ['user/repo']
+            
+            login(name) {
+                this.user = name;
+                localStorage.setItem('tv_username', name);
+                updateProfileUI();
+            },
+            
+            toggleLike(videoUrl) {
+                if (this.likes[videoUrl]) {
+                    delete this.likes[videoUrl];
+                } else {
+                    this.likes[videoUrl] = true;
+                }
+                localStorage.setItem('tv_likes', JSON.stringify(this.likes));
+                return !!this.likes[videoUrl];
+            },
+            
+            isLiked(videoUrl) {
+                return !!this.likes[videoUrl];
+            },
+
+            toggleSub(channelId) {
+                const idx = this.subs.indexOf(channelId);
+                if (idx > -1) {
+                    this.subs.splice(idx, 1);
+                } else {
+                    this.subs.push(channelId);
+                }
+                localStorage.setItem('tv_subs', JSON.stringify(this.subs));
+                return idx === -1; // true if added
+            },
+
+            isSubscribed(channelId) {
+                return this.subs.includes(channelId);
+            }
+        };
+
+        // --- 3. ИНТЕРФЕЙС И ЛОГИКА ---
+        
+        // Аутентификация
+        const authModal = document.getElementById('auth-modal');
+        if (DB.user) {
+            authModal.style.display = 'none';
+            updateProfileUI();
+        } else {
+            document.getElementById('login-btn').addEventListener('click', () => {
+                const name = document.getElementById('username-input').value.trim();
+                if (name) {
+                    DB.login(name);
+                    authModal.style.display = 'none';
+                    // Приветственный звук
+                    initAudio(); playStaticSound();
+                }
+            });
+        }
+
+        function updateProfileUI() {
+            const btn = document.getElementById('header-profile');
+            btn.innerText = DB.user.charAt(0).toUpperCase();
+            document.getElementById('profile-name').innerText = DB.user;
+            renderSubsList();
+        }
+
+        function renderSubsList() {
+            const list = document.getElementById('subs-list');
+            list.innerHTML = '';
+            if (DB.subs.length === 0) {
+                list.innerHTML = '<div style="color:#555; padding:10px;">No subscriptions yet</div>';
+                return;
+            }
+            DB.subs.forEach(sub => {
+                const div = document.createElement('div');
+                div.className = 'sub-item';
+                div.innerHTML = `<div style="width:20px;height:20px;background:white;border-radius:50%;"></div> <span>${sub}</span>`;
+                div.onclick = () => {
+                    const [u, r] = sub.split('/');
+                    window.location.href = `?user=${u}&repo=${r}`;
+                };
+                list.appendChild(div);
+            });
+        }
+
+        // Открытие/закрытие профиля
+        document.getElementById('header-profile').addEventListener('click', (e) => {
+            e.stopPropagation();
+            document.getElementById('profile-modal').style.display = 'flex';
+            document.getElementById('profile-menu').style.display = 'flex';
+        });
+        document.getElementById('close-profile').addEventListener('click', () => {
+            document.getElementById('profile-modal').style.display = 'none';
+        });
+
+        // Добавление канала по ссылке
+        document.getElementById('add-channel-btn').addEventListener('click', () => {
+            const input = prompt("Enter user/repo (e.g. vasya/videos):");
+            if(input && input.includes('/')) {
+                window.location.href = `?user=${input.split('/')[0]}&repo=${input.split('/')[1]}`;
+            }
+        });
+
+
+        // --- 4. ВИДЕО ДВИЖОК ---
+        
+        // Получение данных с GitHub
+        async function fetchVideos() {
+            const apiUrl = `https://api.github.com/repos/${CURRENT_USER}/${CURRENT_REPO}/contents/${CURRENT_FOLDER}`;
+            console.log("Loading channel:", CHANNEL_ID);
+            
+            // Обновляем UI канала сразу
+            document.getElementById('ui-channel').innerText = CURRENT_REPO;
+            document.getElementById('ui-avatar').innerText = CURRENT_USER.charAt(0).toUpperCase();
+            updateSubBtn();
+
+            try {
+                const res = await fetch(apiUrl);
+                if (!res.ok) throw new Error('Channel offline');
+                const data = await res.json();
+                
+                videos = data
+                    .filter(f => f.name.match(/\.(mp4|mov|webm)$/i))
+                    .map(f => ({ url: f.download_url, name: f.name }));
+                
+                if(videos.length > 0) {
+                    appReady = true;
+                    document.getElementById('hint-text').style.opacity = 1;
+                }
+            } catch (e) {
+                document.getElementById('ui-title').innerText = "ERROR: CHANNEL NOT FOUND";
+                document.getElementById('ui-channel').innerText = "OFFLINE";
+            }
+        }
+
+        // Генератор метаданных (Фейковые лайки, которые выглядят реально)
+        function getFakeStats(filename) {
+            // Простой хэш из имени файла, чтобы число было всегда одинаковым для одного видео
+            let hash = 0;
+            for (let i = 0; i < filename.length; i++) hash = filename.charCodeAt(i) + ((hash << 5) - hash);
+            const pseudoRandom = Math.abs(hash);
+            
+            const likes = (pseudoRandom % 900) + 10 + 'K'; // 10K - 900K
+            const cleanTitle = filename.replace(/\.(mp4|mov|webm)$/i, '').replace(/_/g, ' ');
+            return { title: cleanTitle, likes };
+        }
+
+        function updateVideoUI(videoData) {
+            const meta = getFakeStats(videoData.name);
+            
+            document.getElementById('ui-title').innerText = meta.title;
+            
+            // Лайки
+            const isLiked = DB.isLiked(videoData.url);
+            const likeBtn = document.getElementById('like-btn');
+            const label = document.getElementById('ui-likes');
+            
+            if (isLiked) {
+                likeBtn.classList.add('liked');
+                label.innerText = "Liked";
+            } else {
+                likeBtn.classList.remove('liked');
+                label.innerText = meta.likes;
+            }
+        }
+
+        function updateSubBtn() {
+            const btn = document.getElementById('sub-btn');
+            if (DB.isSubscribed(CHANNEL_ID)) {
+                btn.innerText = "FOLLOWING";
+                btn.classList.add('subscribed');
+            } else {
+                btn.innerText = "FOLLOW";
+                btn.classList.remove('subscribed');
+            }
+        }
+
+        // --- 5. ЛОГИКА ВОСПРОИЗВЕДЕНИЯ ---
+        const videoEl = document.getElementById('tv-video');
+        
+        function switchChannel() {
+            if (!appReady) return;
+            initAudio(); playStaticSound(); startNoise();
+            videoEl.style.display = 'none';
+            
+            // Random video
+            let newIdx;
+            if (videos.length > 1) {
+                do { newIdx = Math.floor(Math.random() * videos.length); } while(newIdx === currentIdx);
+            } else { newIdx = 0; }
+            currentIdx = newIdx;
+            
+            const vid = videos[currentIdx];
+            updateVideoUI(vid);
+            
+            videoEl.src = vid.url;
+            videoEl.load();
+            videoEl.play().catch(e => console.log("Autoplay block"));
+        }
+
+        // Events
+        videoEl.addEventListener('playing', () => {
+            stopNoise();
+            videoEl.style.display = 'block';
+            clearTimeout(skipTimeout);
+        });
+        videoEl.addEventListener('error', () => {
+            if(!isNoiseActive) startNoise();
+            skipTimeout = setTimeout(switchChannel, 1000);
+        });
+        videoEl.addEventListener('ended', switchChannel);
+
+        // --- 6. ДЕЙСТВИЯ (КЛИКИ) ---
+        
+        // Переключение канала
+        document.getElementById('main-container').addEventListener('click', (e) => {
+            // Игнорируем клики по кнопкам интерфейса
+            if (e.target.closest('.action-item') || 
+                e.target.closest('.channel-badge') || 
+                e.target.closest('.modal-overlay')) return;
+            
+            switchChannel();
+        });
+        
+        document.getElementById('next-btn').addEventListener('click', switchChannel);
+
+        // Лайк
+        document.getElementById('like-btn').addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (currentIdx === -1) return;
+            
+            const vid = videos[currentIdx];
+            const liked = DB.toggleLike(vid.url);
+            
+            const btn = document.getElementById('like-btn');
+            if (liked) {
+                btn.classList.add('liked');
+                document.getElementById('ui-likes').innerText = "Liked";
+            } else {
+                btn.classList.remove('liked');
+                const meta = getFakeStats(vid.name);
+                document.getElementById('ui-likes').innerText = meta.likes;
+            }
+        });
+
+        // Подписка
+        document.getElementById('channel-badge').addEventListener('click', (e) => {
+            e.stopPropagation();
+            DB.toggleSub(CHANNEL_ID);
+            updateSubBtn();
+        });
+
+        // Поделиться (копирует ссылку на конкретного юзера/репо)
+        document.getElementById('share-btn').addEventListener('click', (e) => {
+            e.stopPropagation();
+            const url = window.location.href;
+            navigator.clipboard.writeText(url).then(() => alert("Link copied!"));
+        });
+
+        // --- 7. EFFECS (Noise/Audio) ---
+        function initAudio() { if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
+        function playStaticSound() {
+            if(!audioCtx) return;
+            if(audioCtx.state === 'suspended') audioCtx.resume();
+            const buf = audioCtx.createBuffer(1, audioCtx.sampleRate*0.4, audioCtx.sampleRate);
+            const d = buf.getChannelData(0);
+            for(let i=0; i<d.length; i++) d[i] = Math.random()*2-1;
+            const src = audioCtx.createBufferSource(); src.buffer = buf;
+            const g = audioCtx.createGain();
+            g.gain.setValueAtTime(0.1, audioCtx.currentTime);
+            g.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime+0.4);
+            src.connect(g); g.connect(audioCtx.destination); src.start();
+        }
+
+        const canvas = document.getElementById('static-canvas');
+        const ctx = canvas.getContext('2d');
+        function resize() { canvas.width=window.innerWidth/2; canvas.height=window.innerHeight/2; }
+        window.addEventListener('resize', resize); resize();
+        let noiseId;
+        function startNoise() {
+            canvas.style.display='block'; isNoiseActive=true;
+            const imgData = ctx.createImageData(canvas.width, canvas.height);
+            const buf = new Uint32Array(imgData.data.buffer);
+            function loop() {
+                if(!isNoiseActive) return;
+                for(let i=0; i<buf.length; i++) buf[i] = Math.random()<0.5 ? 0xff000000 : 0xffffffff;
+                ctx.putImageData(imgData,0,0);
+                noiseId = requestAnimationFrame(loop);
+            }
+            loop();
+            document.getElementById('hint-text').style.opacity=0;
+        }
+        function stopNoise() {
+            isNoiseActive=false; cancelAnimationFrame(noiseId); canvas.style.display='none';
+        }
+
+        // START
+        startNoise();
+        fetchVideos();
+
+    </script>
+</body>
+</html>
